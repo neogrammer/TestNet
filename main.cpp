@@ -222,6 +222,23 @@ UDPSocket::~UDPSocket()
 	closesocket(mSocket);
 }
 
+class TCPSocket
+{
+	friend class SocketUtil;
+	TCPSocket(SOCKET inSocket) :mSocket(inSocket) {}
+	SOCKET mSocket;
+
+public:
+	~TCPSocket();
+	int Connect(const SocketAddress& inAddress);
+	int Bind(const SocketAddress& inToAddress);
+	int Listen(int inBackLog = 32);
+	std::shared_ptr<TCPSocket> Accept(SocketAddress&& inFromAddress);
+	int Send(const void* inData, int inLen);
+	int Receive(void* inBuffer, int inLen);
+
+};
+typedef std::shared_ptr<TCPSocket> TCPSocketPtr;
 
 
 
@@ -272,4 +289,81 @@ int main()
 
 
 	return 0;
+}
+
+TCPSocket::~TCPSocket()
+{
+	closesocket(mSocket);
+}
+
+int TCPSocket::Connect(const SocketAddress& inAddress)
+{
+	int err = connect(mSocket, &inAddress.mSockAddr, inAddress.GetSize());
+	if (err < 0)
+	{
+		SocketUtil::ReportError(L"TCPSocket::Connect");
+		return -SocketUtil::GetLastError();
+	}
+	return NO_ERROR;
+}
+
+int TCPSocket::Bind(const SocketAddress& inToAddress)
+{
+	return 0;
+}
+
+int TCPSocket::Listen(int inBackLog)
+{
+	int err = listen(mSocket, inBackLog);
+	if (err < 0)
+	{
+		SocketUtil::ReportError(L"TCPocket::Listen");
+		return -SocketUtil::GetLastError();
+	}
+	return NO_ERROR;
+}
+
+std::shared_ptr<TCPSocket> TCPSocket::Accept(SocketAddress&& inFromAddress)
+{
+	int length = inFromAddress.GetSize();
+	SOCKET newSocket = accept(mSocket, &inFromAddress.mSockAddr, &length);
+
+	if (newSocket != INVALID_SOCKET)
+	{
+		return TCPSocketPtr(new TCPSocket(newSocket));
+	}
+	else
+	{
+		SocketUtil::ReportError(L"TCPSocket::Accept");
+		return nullptr;
+	}
+
+}
+
+
+
+
+
+int TCPSocket::Send(const void* inData, int inLen)
+{
+	int bytesSentCount = send(mSocket, static_cast<const char*>(inData), inLen, 0);
+
+	if (bytesSentCount < 0)
+	{
+		SocketUtil::ReportError(L"TCPSocket::Send");
+		return -SocketUtil::GetLastError();
+	}
+	return bytesSentCount;
+}
+
+int TCPSocket::Receive(void* inBuffer, int inLen)
+{
+	int bytesReceivedCount = recv(mSocket, static_cast<char*>(inBuffer), inLen, 0);
+	if (bytesReceivedCount < 0)
+	{
+		SocketUtil::ReportError(L"TCPSocket::Receive");
+		return -SocketUtil::GetLastError();
+	}
+
+	return bytesReceivedCount;
 }

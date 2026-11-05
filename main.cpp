@@ -1,5 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#include <Winsock2.h>
 #include <Ws2Tcpip.h>
 #include <memory>
 #include <string>
@@ -16,52 +17,15 @@ enum SocketAddressFamily
 class SocketAddress
 {
 public:
-	explicit SocketAddress(uint32_t inAddress, uint16_t inPort)
-	{
-		GetAsSockAddrIn()->sin_family = AF_INET;
-		GetAsSockAddrIn()->sin_addr.S_un.S_addr = htonl(inAddress);
-		GetAsSockAddrIn()->sin_port = htons(inPort);
-	}
-	explicit SocketAddress(PCWSTR ipAddress, uint16_t inPort)
-	{
-		sockaddr_in myAddr;
-		myAddr.sin_family = AF_INET;
-		myAddr.sin_port = htons(inPort);
-#ifdef _WIN32
-		{	
-		InetPton(AF_INET, ipAddress, &myAddr.sin_addr);
-
-	}
-#else
-		{
-    		inet_pton(AF_INET, PCTSTR(&myAddr.sin_addr));
-		}
-#endif
-	}
-
-	explicit SocketAddress(const sockaddr& inSockAddr)
-	{
-		memcpy(&mSockAddr, &inSockAddr, sizeof(sockaddr));
-	}
-
-
-
-
-	size_t GetSize() const { return sizeof(sockaddr); }
+	explicit SocketAddress(uint32_t inAddress, uint16_t inPort);
+	explicit SocketAddress(PCWSTR ipAddress, uint16_t inPort);
+	explicit SocketAddress(const sockaddr& inSockAddr);
+	size_t GetSize() const;
 	sockaddr mSockAddr;
 private:
-
-
-	sockaddr_in* GetAsSockAddrIn()
-	{
-		return reinterpret_cast<sockaddr_in*>(&mSockAddr);
-	}
-
-
+	sockaddr_in* GetAsSockAddrIn();
 };
 typedef std::shared_ptr<SocketAddress> SocketAddressPtr;
-
-
 class SocketAddressFactory
 {
 public:
@@ -118,9 +82,6 @@ std::string LPCWSTR_to_string(LPCWSTR lpwsz) {
 	WideCharToMultiByte(CP_UTF8, 0, lpwsz, -1, &result[0], len, nullptr, nullptr);
 	return result;
 }
-
-
-
 class UDPSocket
 {
 public:
@@ -138,6 +99,24 @@ private:
 };
 typedef std::shared_ptr<UDPSocket> UDPSocketPtr;
 
+class TCPSocket
+{
+	friend class SocketUtil;
+	TCPSocket(SOCKET inSocket) :mSocket(inSocket) {}
+	SOCKET mSocket;
+
+public:
+	~TCPSocket();
+	int Connect(const SocketAddress& inAddress);
+	int Bind(const SocketAddress& inToAddress);
+	int Listen(int inBackLog = 32);
+	std::shared_ptr<TCPSocket> Accept(SocketAddress& inFromAddress);
+	int Send(const void* inData, int inLen);
+	int Receive(void* inBuffer, int inLen);
+
+};
+typedef std::shared_ptr<TCPSocket> TCPSocketPtr;
+
 class SocketUtil
 {
 public:
@@ -154,8 +133,127 @@ public:
 	}
 
 	UDPSocketPtr CreateUDPSocket(SocketAddressFamily inFamily);
+	static TCPSocketPtr CreateTCPSocket(SocketAddressFamily inFamily);
 
 };
+
+
+
+int main()
+{
+
+	HWND myWindow = GetConsoleWindow();
+	{
+		WSADATA wsaData;
+		int code = WSAStartup(MAKEWORD(2, 2), &wsaData);
+		if (code != 0)
+		{
+			int error = WSAGetLastError();
+			return error;
+		}
+	}
+
+	auto sock =	SocketAddressFactory::CreateIPv4FromString("localhost:55555");
+	auto tcp = SocketUtil::CreateTCPSocket(SocketAddressFamily::INET);
+	auto bound = tcp->Bind(*sock);
+	
+
+	while (true)
+	{
+		std::cout << "Are you the Client or the Server? (C) or (S): ";
+		char in;
+		std::cin >> in;
+
+		if (in == 'c' || in == 'C')
+		{
+			std::cout << "\nYou are the client!\n";
+
+			if (tcp->Connect(*sock) != 0)
+			{
+				SocketUtil::ReportError(L"\nUnable to connect to server!\n");
+				break;
+			}
+			system("Pause");
+
+			break;
+		}
+		else if (in == 's' || in == 'S')
+		{
+
+
+			std::cout << "\nYou are the server!\n";
+
+			int result = tcp->Listen(32);
+			if (result < 0)
+			{
+				SocketUtil::ReportError(L"\nListen Failed");
+				break;
+			}
+			else
+			{
+				sockaddr tmp{};
+				SocketAddress receivingAddress{tmp};
+				auto tcpClient = tcp->Accept(receivingAddress);
+
+				system("Pause");
+			}
+
+			break;
+		}
+		else
+		{
+			std::cout << "\nChoice not good enough, Try again\n";
+			continue;
+		}
+	}
+	int code = WSACleanup();
+
+
+
+	return 0;
+}
+
+
+//////////////////////////////
+//////////////////////////////
+
+
+SocketAddress::SocketAddress(uint32_t inAddress, uint16_t inPort)
+{
+	GetAsSockAddrIn()->sin_family = AF_INET;
+	GetAsSockAddrIn()->sin_addr.S_un.S_addr = htonl(inAddress);
+	GetAsSockAddrIn()->sin_port = htons(inPort);
+}
+
+SocketAddress::SocketAddress(PCWSTR ipAddress, uint16_t inPort)
+{
+	sockaddr_in myAddr;
+	myAddr.sin_family = AF_INET;
+	myAddr.sin_port = htons(inPort);
+#ifdef _WIN32
+	InetPton(AF_INET, ipAddress, &myAddr.sin_addr);
+#else
+	inet_pton(AF_INET, PCTSTR(&myAddr.sin_addr));
+#endif
+}
+
+SocketAddress::SocketAddress(const sockaddr& inSockAddr)
+{
+	memcpy(&mSockAddr, &inSockAddr, sizeof(sockaddr));
+}
+
+size_t SocketAddress::GetSize() const { return sizeof(sockaddr); }
+
+
+sockaddr_in* SocketAddress::GetAsSockAddrIn()
+{
+	return reinterpret_cast<sockaddr_in*>(&mSockAddr);
+}
+
+
+
+/// //////////////////////////////////////////////////////
+/// //////////////////////////////////////////////////
 
 UDPSocketPtr SocketUtil::CreateUDPSocket(SocketAddressFamily inFamily)
 {
@@ -171,6 +269,22 @@ UDPSocketPtr SocketUtil::CreateUDPSocket(SocketAddressFamily inFamily)
 	}
 }
 
+TCPSocketPtr SocketUtil::CreateTCPSocket(SocketAddressFamily inFamily)
+{
+	SOCKET s = socket(inFamily, SOCK_STREAM, IPPROTO_TCP);
+	if (s != INVALID_SOCKET)
+	{
+		return TCPSocketPtr(new TCPSocket(s));
+	}
+	else
+	{
+		ReportError(L"SocketUtil::CreateTCPSocket");
+		return nullptr;
+	}
+}
+
+/// //////////////////////////////////////////////////////////////
+/// ///////////////////////////////////////////////////////////////
 
 
 int UDPSocket::Bind(const SocketAddress& inBindAddress)
@@ -178,7 +292,7 @@ int UDPSocket::Bind(const SocketAddress& inBindAddress)
 	int err = bind(mSocket, &inBindAddress.mSockAddr, static_cast<int>(inBindAddress.GetSize()));
 	if (err != 0)
 	{
-		
+
 		SocketUtil::ReportError(L"UDPSocket::Bind");
 		return SocketUtil::GetLastError();
 	}
@@ -195,8 +309,8 @@ int UDPSocket::ReceiveFrom(void* inBuffer, int inLen, int inMaxLength, SocketAdd
 	{
 		return readyByteCount;
 	}
-	else	
-	{ 
+	else
+	{
 		SocketUtil::ReportError(L"UDPSocket::ReceiveFrom");
 		return -SocketUtil::GetLastError();
 	}
@@ -222,74 +336,9 @@ UDPSocket::~UDPSocket()
 	closesocket(mSocket);
 }
 
-class TCPSocket
-{
-	friend class SocketUtil;
-	TCPSocket(SOCKET inSocket) :mSocket(inSocket) {}
-	SOCKET mSocket;
-
-public:
-	~TCPSocket();
-	int Connect(const SocketAddress& inAddress);
-	int Bind(const SocketAddress& inToAddress);
-	int Listen(int inBackLog = 32);
-	std::shared_ptr<TCPSocket> Accept(SocketAddress&& inFromAddress);
-	int Send(const void* inData, int inLen);
-	int Receive(void* inBuffer, int inLen);
-
-};
-typedef std::shared_ptr<TCPSocket> TCPSocketPtr;
-
-
-
-
-int main()
-{
-#ifdef _WIN32
-	HWND myWindow = GetConsoleWindow();
-	{
-		WSADATA wsaData;
-		int code = WSAStartup(MAKEWORD(2, 2), &wsaData);
-		if (!code)
-		{
-			int error = WSAGetLastError();
-			return error;
-		}
-	}
-
-	auto sock =	SocketAddressFactory::CreateIPv4FromString("localhost");
-	SOCKET sockit{};
-	auto udp = UDPSocket(sockit);
-	auto bound = udp.Bind(*sock);
-
-
-
-
-	if (bound == 0)
-	{
-		char buff[128] = {"Hello govna!\n"};
-
-		udp.SendTo((void*)buff, 14, *sock);
-
-
-
-	}
-	else
-	{
-		closesocket(sockit);
-		int code = WSACleanup();
-		return code;
-	}
-	
-	closesocket(sockit);
-	int code = WSACleanup();
-	return 0;
-#endif
-	// POSIX
-
-
-	return 0;
-}
+//////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+  
 
 TCPSocket::~TCPSocket()
 {
@@ -298,7 +347,7 @@ TCPSocket::~TCPSocket()
 
 int TCPSocket::Connect(const SocketAddress& inAddress)
 {
-	int err = connect(mSocket, &inAddress.mSockAddr, inAddress.GetSize());
+	int err = connect(mSocket, &inAddress.mSockAddr, static_cast<int>(inAddress.GetSize()));
 	if (err < 0)
 	{
 		SocketUtil::ReportError(L"TCPSocket::Connect");
@@ -309,7 +358,13 @@ int TCPSocket::Connect(const SocketAddress& inAddress)
 
 int TCPSocket::Bind(const SocketAddress& inToAddress)
 {
-	return 0;
+	int err = bind(mSocket, &inToAddress.mSockAddr, static_cast<int>(inToAddress.GetSize()));
+	if (err != 0)
+	{
+		SocketUtil::ReportError(L"TCPSocket::Bind");
+		return SocketUtil::GetLastError();
+	}
+	return NO_ERROR;
 }
 
 int TCPSocket::Listen(int inBackLog)
@@ -317,15 +372,15 @@ int TCPSocket::Listen(int inBackLog)
 	int err = listen(mSocket, inBackLog);
 	if (err < 0)
 	{
-		SocketUtil::ReportError(L"TCPocket::Listen");
+		SocketUtil::ReportError(L"TCPSocket::Listen");
 		return -SocketUtil::GetLastError();
 	}
 	return NO_ERROR;
 }
 
-std::shared_ptr<TCPSocket> TCPSocket::Accept(SocketAddress&& inFromAddress)
+std::shared_ptr<TCPSocket> TCPSocket::Accept(SocketAddress& inFromAddress)
 {
-	int length = inFromAddress.GetSize();
+	int length = static_cast<int>(inFromAddress.GetSize());
 	SOCKET newSocket = accept(mSocket, &inFromAddress.mSockAddr, &length);
 
 	if (newSocket != INVALID_SOCKET)
@@ -339,10 +394,6 @@ std::shared_ptr<TCPSocket> TCPSocket::Accept(SocketAddress&& inFromAddress)
 	}
 
 }
-
-
-
-
 
 int TCPSocket::Send(const void* inData, int inLen)
 {
@@ -367,3 +418,4 @@ int TCPSocket::Receive(void* inBuffer, int inLen)
 
 	return bytesReceivedCount;
 }
+ 

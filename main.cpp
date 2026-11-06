@@ -7,6 +7,11 @@
 #include <utility>
 #include <iostream>
 #include <thread>
+#include <chrono>
+///
+///  Globals
+/// 
+bool gIsGameRunning = false;
 
 enum SocketAddressFamily
 {
@@ -17,15 +22,30 @@ enum SocketAddressFamily
 class SocketAddress
 {
 public:
+
 	explicit SocketAddress(uint32_t inAddress, uint16_t inPort);
 	explicit SocketAddress(PCWSTR ipAddress, uint16_t inPort);
+	
 	explicit SocketAddress(const sockaddr& inSockAddr);
+	explicit SocketAddress();
 	size_t GetSize() const;
 	sockaddr mSockAddr;
+
 private:
+
+#if _WIN32
+	uint32_t& GetIP4Ref() { return *reinterpret_cast<uint32_t*>(&GetAsSockAddrIn()->sin_addr.S_un.S_addr); }
+	const uint32_t& GetIP4Ref()			const { return *reinterpret_cast<const uint32_t*>(&GetAsSockAddrIn()->sin_addr.S_un.S_addr); }
+#else
+	uint32_t& GetIP4Ref() { return GetAsSockAddrIn()->sin_addr.s_addr; }
+	const uint32_t& GetIP4Ref()			const { return GetAsSockAddrIn()->sin_addr.s_addr; }
+#endif
+public:
 	sockaddr_in* GetAsSockAddrIn();
+	const	sockaddr_in* GetAsSockAddrIn()	const { return reinterpret_cast<const sockaddr_in*>(&mSockAddr); }
 };
 typedef std::shared_ptr<SocketAddress> SocketAddressPtr;
+
 class SocketAddressFactory
 {
 public:
@@ -89,6 +109,7 @@ public:
 	int Bind(const SocketAddress& inToAddress);
 	int SendTo(const void* inData, int inLen, const SocketAddress& inTo);
 	int ReceiveFrom(void* inBuffer, int inLen, int inMaxLength, SocketAddress& outFrom);
+	int SetNonBlockingMode(bool inShouldBeNonBlocking);
 
 	friend class SocketUtil;
 	UDPSocket(SOCKET inSocket) : mSocket(inSocket) {
@@ -132,12 +153,35 @@ public:
 		return WSAGetLastError();
 	}
 
-	UDPSocketPtr CreateUDPSocket(SocketAddressFamily inFamily);
+	static UDPSocketPtr CreateUDPSocket(SocketAddressFamily inFamily);
 	static TCPSocketPtr CreateTCPSocket(SocketAddressFamily inFamily);
 
 };
 
+void DoGameLoop();
+void DoServerLoop(UDPSocketPtr sock);
 
+int ProcessReceivedData(char* data, int bytesReceived, SocketAddress socketAddress)
+{
+	static int bytesTotal{ 0 };
+	bytesTotal += bytesReceived;
+
+	const std::string strTotal = "IHATEMYLIFESOOMUCHIJUSTWANTTOFUCKASHEEP";
+	std::cout << "Received " << bytesReceived << " plus buffer is a total of " << bytesTotal << " of " << strTotal.length() << std::endl;
+
+	if (bytesTotal >= strTotal.length())
+	{
+		std::cout << "All data received!" << std::endl;
+		bytesTotal = 0;
+		return 0;
+	}
+	else
+	{
+		std::cout << "Bytes left to receive: " << strTotal.length() - bytesTotal << std::endl;
+		return  static_cast<int>(strTotal.length()) - bytesTotal;
+	}
+}
+	
 
 int main()
 {
@@ -153,9 +197,9 @@ int main()
 		}
 	}
 
-	auto sock =	SocketAddressFactory::CreateIPv4FromString("localhost:55555");
-	auto tcp = SocketUtil::CreateTCPSocket(SocketAddressFamily::INET);
-	auto bound = tcp->Bind(*sock);
+	//auto sock =	SocketAddressFactory::CreateIPv4FromString("localhost:55555");
+	//auto tcp = SocketUtil::CreateTCPSocket(SocketAddressFamily::INET);
+	//auto bound = tcp->Bind(*sock);
 	
 
 	while (true)
@@ -168,13 +212,13 @@ int main()
 		{
 			std::cout << "\nYou are the client!\n";
 
-			if (tcp->Connect(*sock) != 0)
-			{
-				SocketUtil::ReportError(L"\nUnable to connect to server!\n");
-				break;
-			}
-			system("Pause");
-
+			//if (tcp->Connect(*sock) != 0)
+			//{
+			//	SocketUtil::ReportError(L"\nUnable to connect to server!\n");
+			//	break;
+			//}
+			//system("Pause");
+			DoGameLoop();
 			break;
 		}
 		else if (in == 's' || in == 'S')
@@ -183,20 +227,26 @@ int main()
 
 			std::cout << "\nYou are the server!\n";
 
-			int result = tcp->Listen(32);
-			if (result < 0)
-			{
-				SocketUtil::ReportError(L"\nListen Failed");
-				break;
-			}
-			else
-			{
-				sockaddr tmp{};
-				SocketAddress receivingAddress{tmp};
-				auto tcpClient = tcp->Accept(receivingAddress);
+			auto udp = SocketUtil::CreateUDPSocket(SocketAddressFamily::INET);
+			DoServerLoop(udp);
 
-				system("Pause");
-			}
+			//int result = tcp->Listen(32);
+			//if (result < 0)
+			//{
+			//	SocketUtil::ReportError(L"\nListen Failed");
+			//	break;
+			//}
+			//else
+			//{
+			//	
+			//	auto receivingAddress = SocketAddressFactory::CreateIPv4FromString("loopback:55555");
+			//	auto tcpClient = tcp->Accept(*receivingAddress);
+
+
+
+
+			//	system("Pause");
+			//}
 
 			break;
 		}
@@ -206,16 +256,19 @@ int main()
 			continue;
 		}
 	}
+	int err = WSAGetLastError();
 	int code = WSACleanup();
-
-
-
+	if (code != 0)
+	{
+		return err;
+	}
 	return 0;
 }
 
 
 //////////////////////////////
 //////////////////////////////
+
 
 
 SocketAddress::SocketAddress(uint32_t inAddress, uint16_t inPort)
@@ -227,19 +280,22 @@ SocketAddress::SocketAddress(uint32_t inAddress, uint16_t inPort)
 
 SocketAddress::SocketAddress(PCWSTR ipAddress, uint16_t inPort)
 {
-	sockaddr_in myAddr;
-	myAddr.sin_family = AF_INET;
-	myAddr.sin_port = htons(inPort);
-#ifdef _WIN32
-	InetPton(AF_INET, ipAddress, &myAddr.sin_addr);
-#else
-	inet_pton(AF_INET, PCTSTR(&myAddr.sin_addr));
-#endif
+	memset(&mSockAddr, 0, sizeof(mSockAddr));
+	GetAsSockAddrIn()->sin_family = AF_INET;
+	GetAsSockAddrIn()->sin_port = htons(inPort);
+	InetPton(AF_INET, ipAddress, &GetAsSockAddrIn()->sin_addr);
 }
 
 SocketAddress::SocketAddress(const sockaddr& inSockAddr)
 {
 	memcpy(&mSockAddr, &inSockAddr, sizeof(sockaddr));
+}
+
+SocketAddress::SocketAddress()
+{
+		GetAsSockAddrIn()->sin_family = AF_INET;
+		GetIP4Ref() = INADDR_ANY;
+		GetAsSockAddrIn()->sin_port = 0;
 }
 
 size_t SocketAddress::GetSize() const { return sizeof(sockaddr); }
@@ -302,19 +358,39 @@ int UDPSocket::Bind(const SocketAddress& inBindAddress)
 int UDPSocket::ReceiveFrom(void* inBuffer, int inLen, int inMaxLength, SocketAddress& outFrom)
 {
 	int fromLength = static_cast<int>(outFrom.GetSize());
-	int readyByteCount = recvfrom(mSocket, static_cast<char*>(inBuffer), inMaxLength, 0, &outFrom.mSockAddr, &inLen);
+	
 
+	
+	int readyByteCount = recvfrom(mSocket, static_cast<char*>(inBuffer), inMaxLength, 0, &outFrom.mSockAddr, &fromLength);
+	if (readyByteCount >= 0) return readyByteCount;
 
-	if (readyByteCount >= 0)
+	int err = WSAGetLastError();
+	if (err == WSAEWOULDBLOCK) return 0;      // nothing waiting, not an error
+	SocketUtil::ReportError(L"UDPSocket::ReceiveFrom");
+	return -err;
+}
+
+int UDPSocket::SetNonBlockingMode(bool inShouldBeNonBlocking)
+{
+#if _WIN32
+	u_long arg = inShouldBeNonBlocking ? 1 : 0;
+	int result = ioctlsocket(mSocket, FIONBIO, &arg);
+#else
+	int flags = fcntl(mSocket, F_GETFL, 0);
+	flags = inShouldBeNonBlocking ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK);
+	fcntl(mSocket, F_SETFL, flags);
+#endif
+
+	if (result == SOCKET_ERROR)
 	{
-		return readyByteCount;
+		SocketUtil::ReportError(L"UDPSocket::SetNonBlockingMode");
+		return SocketUtil::GetLastError();
 	}
 	else
 	{
-		SocketUtil::ReportError(L"UDPSocket::ReceiveFrom");
-		return -SocketUtil::GetLastError();
+		return NO_ERROR;
 	}
-}
+} 
 
 int UDPSocket::SendTo(const void* inData, int inLen, const SocketAddress& inTo)
 {
@@ -418,4 +494,51 @@ int TCPSocket::Receive(void* inBuffer, int inLen)
 
 	return bytesReceivedCount;
 }
- 
+
+void DoGameLoop()
+{
+	UDPSocketPtr mySock = SocketUtil::CreateUDPSocket(INET);
+	SocketAddress listenAddr(INADDR_LOOPBACK, 55555);     // 127.0.0.1:55555
+	if (mySock->Bind(listenAddr) != NO_ERROR) return;
+	mySock->SetNonBlockingMode(true);
+
+	gIsGameRunning = true;
+
+	while (gIsGameRunning)
+	{
+
+
+		char data[1500];
+		SocketAddress socketAddress{};
+		int bytesReceived = mySock->ReceiveFrom(data, sizeof(data), 1500, socketAddress);
+
+		if (bytesReceived > 0)
+		{
+			int left = ProcessReceivedData(data, bytesReceived, socketAddress);
+			if (left == 0)	
+			{
+				std::cout << "All data received!" << std::endl;
+			}
+			else
+			{
+				std::cout << "Bytes left to receive: " << left << std::endl;
+			}
+		}
+		
+	}
+}
+
+void DoServerLoop(UDPSocketPtr sock)
+{
+	SocketAddress clientAddr(INADDR_LOOPBACK, 55555);
+	std::string data = { "IHATEMYLIFESOOMUCHIJUSTWANTTOFUCKASHEEP" };
+	gIsGameRunning = true;
+	//sock->SetNonBlockingMode(true);
+	while (gIsGameRunning)
+	{
+		sock->SendTo(data.c_str(), static_cast<int>(data.length()), clientAddr);
+		std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+	}
+
+}

@@ -13,10 +13,63 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Source Files\misc">
+      <UniqueIdentifier>{bdb2a8ca-2de7-4d99-8606-9f6607f461ba}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\net">
+      <UniqueIdentifier>{0238e9ed-8914-45fc-b783-0d7d924408cd}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\misc">
+      <UniqueIdentifier>{406dfdd6-4bc7-436a-b08c-bf2c27d3cb76}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\net">
+      <UniqueIdentifier>{f2145157-190e-48e1-ba68-8562ac484da3}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\net\SocketAddress.cpp">
+      <Filter>Source Files\net</Filter>
+    </ClCompile>
+    <ClCompile Include="src\net\SocketAddressFactory.cpp">
+      <Filter>Source Files\net</Filter>
+    </ClCompile>
+    <ClCompile Include="src\net\TCPSocket.cpp">
+      <Filter>Source Files\net</Filter>
+    </ClCompile>
+    <ClCompile Include="src\net\UDPSocket.cpp">
+      <Filter>Source Files\net</Filter>
+    </ClCompile>
+    <ClCompile Include="src\net\SocketUtil.cpp">
+      <Filter>Source Files\net</Filter>
+    </ClCompile>
+    <ClCompile Include="src\misc\Util.cpp">
+      <Filter>Source Files\misc</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\misc\include\Util.h">
+      <Filter>Header Files\misc</Filter>
+    </ClInclude>
+    <ClInclude Include="src\net\include\SocketAddress.h">
+      <Filter>Header Files\net</Filter>
+    </ClInclude>
+    <ClInclude Include="src\net\include\SocketAddressFactory.h">
+      <Filter>Header Files\net</Filter>
+    </ClInclude>
+    <ClInclude Include="src\net\include\TCPSocket.h">
+      <Filter>Header Files\net</Filter>
+    </ClInclude>
+    <ClInclude Include="src\net\include\UDPSocket.h">
+      <Filter>Header Files\net</Filter>
+    </ClInclude>
+    <ClInclude Include="src\net\include\SocketUtil.h">
+      <Filter>Header Files\net</Filter>
+    </ClInclude>
+    <ClInclude Include="src\net\include\SocketAddressFamily.h">
+      <Filter>Header Files\net</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

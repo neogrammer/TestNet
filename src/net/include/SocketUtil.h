@@ -4,7 +4,7 @@
 #include <net/include/SocketAddressFamily.h>
 #include <Windows.h>
 
-static class SocketUtil
+class SocketUtil
 {
 public:
 	static void ReportError(PCWSTR str_);
